@@ -1,0 +1,1599 @@
+---
+title: "Seminarski - Adult census income"
+author: "Nikola i Lara"
+date: "2024-08-05"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+Uvod 
+Adult Census Income je skup podataka izvucen iz baze podataka biroa za popis iz 1994.godine. 
+Zadatak predvidjanja je da se utvrdi da li osoba zaradjuje preko 50 hiljada dolara godisnje.
+
+```{r}
+library(readr)
+library(tidyverse)
+library(dplyr)
+library(vcd)
+library(ggplot2)
+library(pROC)
+library(car)
+library(ROCR)
+library(AUC)
+library(caret)
+library(randomForest)
+library(naniar)
+library(rpart)
+library(ROSE)
+```
+
+```{r}
+dataset = read_csv("adult.csv")
+#Ucitavanje csv fajla sa fuknkcijom read_csv
+```
+
+
+```{r}
+view(dataset)
+#Funkcija view(dataset) pruza nam tabelaran uvid u set podataka.
+dim(dataset)
+#Funkcija dim(dataset) daje informacije o dimenzijama okvira podataka.
+head(dataset)
+#Funkcija head(dataset) daje nam uvid u prvih 6 redova naseg dataseta
+```
+Ucitali smo dataset.
+Funkcijom view(dataset) smo saznali da se dataset sastoji iz 9 kategorijskih(chr) kolona i 6 numerickih(dbl) kolona.
+Dataset se sastoji iz 15 kolona i 32561 redova, a to smo saznali funkcijom dim(dataset).
+Predstavicemo dataset i objasniti svaku varijablu.
+Funkcijom str(dataset) cemo proveriti strukturu nasih kolona. 
+
+```{r}
+str(dataset)
+#Funkcijom str proveravamo kakva je struktura datih kolona
+```
+```{r}
+summary(dataset)
+#Funkcija summary() pruža sažetak podataka u različitim vrstama objekata kao što su vektori, faktori, data frame-ovi i drugi objekti. Takodje dobijamo vrednosti poput: maksimuma, minimuma, medijane, broja nedostajucih vrednosti, vrednosti 1. kvartila, 3. kvartila. 
+```
+
+
+Nas skup podataka sadrzi sledece kolone:
+
+1. age - numericka kolona, odnosi se na godine pojedinca 
+  - (min, max) = (17, 90)
+  
+2. workclass - kategorijska kolona, odnosi se na klasifikaciju zaposlenja
+  
+3. fnlwgt - numericka kolona, tezinski faktori u datotekama Current Population Survey(CPS) kontrolisu se nezavisnim procenama americke civilne, neinstitucionalizovane populacije. Koristi se tri seta kontrola:
+ - Procena populacije od 16 godina i starijih za svaku saveznu drzavu.
+ - Kontrole za hispanisko poreklo prema uzrastu i polu
+ - Kontrole prema rasi, uzrastu i polu
+Koristimo sva tri seta kontrola u našem programu za težinsko prilagođavanje i "usklađujemo" ih 6 puta tako da na kraju ponovo uzimamo u obzir sve kontrole koje smo koristili.
+  - (min, max) = (12285, 1484705)
+  
+4. education - kategorijska kolona, odnosi se na stepen obrazovanja
+
+5. education.num - numericka kolona, odnosi se na stepen obrazovanja
+  - (min, max) = (1.00, 16.00)
+  
+6. marital.status - kategorijska kolona, odnosi se na bracni status
+
+7. occupation - kategorijska kolona, odnosi se na vrstu zanimanja
+
+8. relationship - kategorijska kolona, odnosi se na status veze pojedinca
+
+9. race - kategorijska kolona, odnosi se na rasu pojedinca
+
+10. sex - kategorijska kolona, odnosi se na pol pojedinca
+
+11. capital.gain - numericka kolona, odnosi se na kapitalnu dobit 
+  - (min, max) = (0, 99999)
+  
+12. capital.loss - numericka kolona, odnosi se na kapitalni gubitak 
+  - (min, max) = (0.0, 4356.0)
+  
+13. hours.per.week - numericka kolona, odnosi se na broj radnih sati nedeljno
+  - (min, max) = (1.00, 99.00)
+  
+14. native.country -  kategorijska kolona, odnosi se na zemlju porekla
+
+15. income - kolona koju cemo prediktovati, odnosi se na to da li pojedinac zaradjuje manje ili vise od 50k dolara godisnje. 
+
+
+```{r}
+
+
+cat("Jedinstvene vrednosti za 'workclass':\n")
+cat(unique(dataset$workclass), sep = ", ")
+cat("\n\n")
+
+cat("Jedinstvene vrednosti za 'education':\n")
+cat(unique(dataset$education), sep = ", ")
+cat("\n\n")
+
+cat("Jedinstvene vrednosti za 'marital.status':\n")
+cat(unique(dataset$marital.status), sep = ", ")
+cat("\n\n")
+
+cat("Jedinstvene vrednosti za 'occupation':\n")
+cat(unique(dataset$occupation), sep = ", ")
+cat("\n\n")
+
+cat("Jedinstvene vrednosti za 'relationship':\n")
+cat(unique(dataset$relationship), sep = ", ")
+cat("\n\n")
+
+cat("Jedinstvene vrednosti za 'race':\n")
+cat(unique(dataset$race), sep = ", ")
+cat("\n\n")
+
+cat("Jedinstvene vrednosti za 'sex':\n")
+cat(unique(dataset$sex), sep = ", ")
+cat("\n\n")
+
+cat("Jedinstvene vrednosti za 'native.country':\n")
+cat(unique(dataset$native.country), sep = ", ")
+
+#Cat je slicna funkciji print i sluzi za stampanje ali mozemo da uredjujemo nacin stampanja.
+#Funkcija unique(dataset$column),sep=", " sluzi da nam ispise sve jedinstvene vrednosti
+
+```
+
+```{r}
+#Provera nedostajucih podataka (NA) procentualno po kolonama.
+(colMeans(is.na(dataset)))*100
+
+#Provera nedostajucih podataka (NA) po kolonama
+#install.packages("naniar")
+vis_miss(dataset[1:14])
+
+```
+Zakljucujemo da dataset ne sadrzi NA vrednosti. Ali smo iz prethodnih funkcija uocili da postoje "?" vrednosti za pojedine kolone koje cemo mi smatrati NA vrednostima. Da su postojale vrednosti " " ili "-" i njih bi uzimali kao nedostajuce.
+
+Kolone koje sadrzi vrednosti ? su:
+1. workclass
+2. occupation
+3. native.country
+
+```{r}
+missing_workclass = sum(dataset$workclass == "?")
+missing_occupation = sum(dataset$occupation == "?")
+missing_native.country = sum(dataset$native.country == "?")
+
+print(missing_workclass) #ukupan broj ? u workclass
+print(((missing_workclass/nrow(dataset))*100)) #udeo u svim redovima za workclass
+print(missing_occupation) #ukupan broj ? u occupation
+print(((missing_occupation/nrow(dataset))*100)) #udeo u svim redovima za occupatuion
+print(missing_native.country) #ukupan broj ? u native.country
+print(((missing_native.country/nrow(dataset))*100)) #udeo u svim redovima za native_country
+```
+Funkcijom sum(dataset$column == "?") dobili smo broj pojavljivanja vrednosti ? u svakoj od kolona u kojim smo uocili da se pojavljuje.
+
+Za kolonu workclass nasli smo da se vrednost "?" pojavljuje 1836 
+Za kolonu occupation nasli smo da se vrednost "?" pojavljuje 1843 
+Za kolonu native.country nasli smo da se vrednost "?" pojavljuje 583
+
+Funkcijom ((missing_column/nrow(dataset))*100) dobili smo udeo pojavljivanja vrednosti ? u svakoj od kolona u kojim smo uocili da se pojavljuje.
+
+Za kolonu workclass nasli smo da se vrednost "?" pojavljuje 5.638647%
+Za kolonu occupation nasli smo da se vrednost "?" pojavljuje 5.660146%
+Za kolonu native.country nasli smo da se vrednost "?" pojavljuje 1.790486%
+
+```{r}
+#Sredjivanje ? vrednosti za kolone koje imaju takve vrednosti
+#Workclass
+
+xtabs(~ workclass, data = dataset)
+ggplot(data = dataset, mapping = aes(workclass, fill=workclass)) + geom_bar() + labs(title="Raspodela workclass") +  theme(axis.text.x = element_text(angle = 90, vjust = 0.5), legend.position = "none")
+
+#Za kolone workclass smo dobili da ima 22696 podataka sa vrednoscu Private sto cini ~70% ukupnog broja podataka. Tako da cemo za sve vrednosti ?, kojih ima 1836, zameniti sa vrednoscu Private.
+
+dataset = dataset %>% mutate(workclass = ifelse(workclass == "?", "Private", workclass))
+xtabs(~ workclass, data = dataset)
+ggplot(data = dataset, mapping = aes(workclass, fill=workclass)) + geom_bar() + labs(title="Raspodela workclass") +  theme(axis.text.x = element_text(angle = 90, vjust = 0.5), legend.position = "none")
+```
+
+```{r}
+#native.country
+
+xtabs(~ native.country, data = dataset)
+ggplot(data = dataset, mapping = aes(native.country, fill=native.country)) + geom_bar() + labs(title="Raspodela native.country") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5), legend.position = "none")
+
+#Za kolone native.country smo dobili da ima 29170 podataka sa vrednoscu United-States sto cini ~90% ukupnog broja podataka. Tako da cemo za sve vrednosti ?, kojih ima 583, zameniti sa vrednoscu United-States.
+
+dataset = dataset %>% mutate(native.country = ifelse(native.country == "?", "United-States", native.country))
+
+xtabs(~ native.country, data = dataset)
+ggplot(data = dataset, mapping = aes(native.country, fill=native.country)) + geom_bar() + labs(title="Raspodela native.country") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5), legend.position = "none")
+
+```
+
+```{r}
+#occupation
+
+xtabs(~ occupation, data = dataset)
+ggplot(data = dataset, mapping = aes(occupation, fill=occupation)) + geom_bar() + labs(title="Raspodela occupation") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5), legend.position = "none")
+#Za kolonu occupation ne moze sa lakocom odrediti kojim cemo podacima zameniti vrednosti, iz razloga jer su podaci ravnomernije rasporedjeni.
+
+
+ggplot(data = dataset, aes(x = education, fill = occupation)) +
+  geom_bar(position = "fill") +
+  labs(title = "Proportion of Occupations by Education Level",
+       x = "Education",
+       y = "Proportion") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+xtabs(~ occupation, data = dataset)
+#vidimo da na visim nivoima obrazovanja, kao sto su Bachelors, Masters i Doctorate, najvise su primenjena zanimanja Exec-managerial i Prof-specialty
+
+#Sa nizim obrazovanjima kao sto su 1st-4th, 5th-6th, i 7th-8th, imaju vecu zastupljenost zanimanja kao sto su Handlers-cleaners, Machine-op-inspect, i Other-service.
+
+#Zanimanja kao što su Adm-clerical, Sales, i Other-service su zastupljena na vise razlicitih nivoa obrazovanja, sto znaci da se ljudi sa ovim zanimanjima pojavljuju na raznim obrazovnim nivoima.
+
+#Vrednosti za "?" cemo zameniti odgovarajucom vrednoscu iz occupationa na osnovu najcesce pojavljivane vrednosti u education za taj occupationa
+
+library(dplyr)
+ 
+# da pronadjemo najcesce zanimanje za svaki nivo obrazovanja
+most_common_occupation = dataset %>%
+  filter(occupation != "?") %>%
+  group_by(education) %>%
+  summarize(most_common = names(sort(table(occupation), decreasing = TRUE)[1]))
+ 
+# sada da zamenimo ? vrednosti sa najcescim zanimanjem za odgovarajuci nivo obrazovanja
+dataset = dataset %>%
+  left_join(most_common_occupation, by = "education") %>%
+  mutate(occupation = ifelse(occupation == "?", most_common, occupation)) %>%
+  select(-most_common)
+
+ggplot(data = dataset, aes(x = education, fill = occupation)) +
+  geom_bar(position = "fill") +
+  labs(title = "Proportion of Occupations by Education Level",
+       x = "Education",
+       y = "Proportion") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+xtabs(~ occupation, data = dataset)
+```
+
+
+```{r}
+# Na osnovu dobijenih rezulata raspodele kolone occupation, smatrali smo da je najbolje da zadrzimo trenutnu raspodelu jer vise vrednosti ima slicnu raspodelu i ne mozemo dati veliku prednost jednoj vrednosti, nego svaka vrednost procentualno utice na to kojom ce vrednoscu biti zamenjen "?"  - STARI NACIN
+
+# Racunamo broj ponavaljanja svake vrednosti izuzev vrednosti "?"
+#category_distribution = dataset %>%
+#  filter(occupation != "?") %>%   
+#  count(occupation) %>%           
+#  mutate(percentage = n / sum(n))  
+
+# Prethodno izracunat broj ponavljanja vrednosti ? u koloni occupation
+#missing_occupation 
+
+# Postavljamo seed vrednost kako bi pri svakom pokretanju bili jednaki rezultati
+#set.seed(123)
+
+# Menjamo vrednost `?` koristeci tezinsko uzorkovanje na osnovu distribucije kategorija
+#dataset = dataset %>%
+#  mutate(occupation = ifelse(occupation == "?", sample(category_distribution$occupation, missing_occupation, replace = TRUE, prob = #category_distribution$percentage), occupation))
+
+# Ponovni prikaz kako bi mogli da uporedimo sa gore dobijenim vrednostima da li je zadrazana ista raspodela.
+#xtabs(~ occupation, data = dataset)
+#ggplot(data = dataset, mapping = aes(occupation, fill=occupation)) + geom_bar() + labs(title="Raspodela occupation") + theme(axis.text.x = #element_text(angle = 90, vjust = 0.5), legend.position = "none")
+
+```
+
+
+```{r}
+#sada mozemo da sacuvamo nas sredjen skup podataka kao cist_dataset
+cist_dataset = dataset
+write.csv(cist_dataset, "D:/Vezba/3.Godina/Uvod u nauku o podacima/Seminarski/cist_dataset.csv", row.names = FALSE)
+#write.csv(cist_dataset, "C:/Users/Luka/Desktop/seminarskiUvod/cist_dataset.csv", row.names = FALSE)
+cist_dataset = read_csv("cist_dataset.csv")
+head(cist_dataset)
+```
+#RASPODELA VREDNOSTI ZA PREOSTALE KOLONE osim workclass, occupation i native.country jer smo raspodelu vec prikazali
+
+#age
+```{r}
+xtabs(~ age, data = cist_dataset)
+
+ggplot(data=cist_dataset,mapping = aes(x=age)) +  
+geom_bar() +  
+labs(title = "Raspodela po godinama pojedinca")
+
+age_breaks = c(0,27,45,65,Inf) 
+age_labels = c('Under 27','27-45', '45-65', 'Above 65') 
+cist_dataset$AgeGroup = cut(cist_dataset$age, breaks =  age_breaks, labels=age_labels) 
+
+ggplot(data=cist_dataset, aes(x=AgeGroup)) +  
+geom_bar(position='dodge') + 
+labs(title = "Raspodela godina po starosnim grupama") + 
+theme(plot.title = element_text(hjust = 0.5))
+```
+
+#fnlwgt
+```{r}
+xtabs(~ fnlwgt, data = cist_dataset)
+
+unique_fnlwgt = length(unique(cist_dataset$fnlwgt))
+print(unique_fnlwgt)
+
+#postoji skoro 22k unique vrednosti, a ostale se ponavljaju manje od 10 puta tako da je raspodela prilicno jednaka
+```
+
+#education
+```{r}
+xtabs(~ education, data = cist_dataset)
+
+ggplot(data = cist_dataset, mapping = aes(education, fill="red")) + geom_bar() + labs(title="Raspodela education") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5), legend.position = "none")
+```
+#Najvise ima HS-grad pa Some-college zatim Bachelors.
+
+#education.num
+```{r}
+xtabs(~ education.num, data = cist_dataset)
+ggplot(data = cist_dataset, mapping = aes(education.num)) + geom_bar() + labs(title="Raspodela education num") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5), legend.position = "none")
+```
+#Najvise ih ima sa vrednoscu 9 pa 10 pa 13
+
+#marital.status
+```{r}
+xtabs(~ marital.status, data = cist_dataset)
+
+ggplot(data = cist_dataset, mapping = aes(marital.status)) + geom_bar() + labs(title="Raspodela Marital status") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5), legend.position = "none")
+
+```
+#Najvise ima Married-civ-spouse pa Never-married
+
+#relationship
+```{r}
+xtabs(~ relationship, data = cist_dataset)
+
+RelationshipPercent = cist_dataset %>% group_by(relationship) %>% count() %>% ungroup() %>% mutate(percentage = `n`/sum(`n`)) %>% arrange(percentage) %>% mutate(p = scales::percent(percentage))
+
+ggplot(RelationshipPercent, aes(x = "", y = percentage, fill = relationship)) + geom_col() + geom_text(aes(label = p),position = position_stack(vjust = 0.5)) +  coord_polar(theta = "y") + scale_fill_brewer(palette = "Pastel1")
+```
+
+#race
+```{r}
+xtabs(~ race, data = cist_dataset)
+
+ggplot(cist_dataset %>% group_by(race) %>% count() %>% ungroup(), aes(x = "", y = n, fill = race)) +
+  geom_col() +
+  coord_polar(theta = "y") +
+  scale_fill_brewer(palette = "Pastel1")
+
+```
+#sex
+```{r}
+xtabs(~ sex, data = cist_dataset)
+
+SexPercent = cist_dataset %>% group_by(sex) %>% count() %>% ungroup() %>% mutate(percentage = `n`/sum(`n`)) %>% arrange(percentage) %>%
+  mutate(p = scales::percent(percentage))
+
+ggplot(SexPercent, aes(x = "", y = percentage, fill = sex)) + geom_col() + geom_text(aes(label = p),position = position_stack(vjust = 0.5)) +  coord_polar(theta = "y") + scale_fill_brewer(palette = "Pastel1")
+```
+
+#capital.gain
+```{r}
+xtabs(~ capital.gain, data = cist_dataset)
+
+ggplot(cist_dataset, aes(x = capital.gain)) + geom_histogram(binwidth=1000) 
+
+ggplot(cist_dataset %>% group_by(capital.gain) %>% count() %>% ungroup(), aes(x = "", y = n, fill = capital.gain)) +
+  geom_col() +
+  coord_polar(theta = "y")
+
+#vrednost 0 se pojavljuje skoro 30k puta
+#PROMENITI PALETU
+```
+
+
+#capital.loss
+```{r}
+xtabs(~ capital.loss, data = cist_dataset)
+
+ggplot(cist_dataset, aes(x = capital.loss)) + geom_histogram(binwidth=100) 
+
+ggplot(cist_dataset %>% group_by(capital.loss) %>% count() %>% ungroup(), aes(x = "", y = n, fill = capital.loss)) +
+  geom_col() +
+  coord_polar(theta = "y") 
+#31k pojedinaca sa vrednoscu 0
+```
+
+
+#hours.per.week
+```{r}
+xtabs(~ hours.per.week, data = cist_dataset)
+
+ggplot(data = cist_dataset, mapping = aes(hours.per.week)) + geom_bar() + labs(title="Raspodela hours.per.week") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5), legend.position = "none")
+#preko 15k pojedinaca sa vrednoscu 40
+```
+
+
+#PROVERA OUTLIERA ZA SVAKU KOLONU
+```{r}
+#Na logisticku regresiju uticu outlieri slicno kao za linearnu
+#Na decision tree i na random forest outlieri nemaju neki uticaj
+no_outlier_dataset = cist_dataset
+```
+
+#age
+```{r}
+boxplot(cist_dataset$age, main="Boxplot za age", ylab="Values", horizontal=TRUE) 
+cist_dataset %>% mutate(z_score = scale(age)) %>% filter(abs(z_score) > 3.5)
+#47 redova koji imaju z_score preko 3.5 i to su svi iz AgeGroup-a preko 65 uglavnom 90 godina
+no_outlier_dataset = no_outlier_dataset %>% mutate(z_score = scale(age)) %>% filter(abs(z_score) <= 3.5) %>% select(-z_score)
+
+qqnorm(cist_dataset$age) #grafik normalnosti
+qqline(cist_dataset$age, col="red") #linija se crta kroz tacke formirane prvim i trecim kvantilom Q1 i Q3
+
+hist(cist_dataset$age, probability=TRUE, main="Histogram with Density", xlab="Values")
+lines(density(cist_dataset$age), col="blue") #histogrom sa poligonom frekvencija
+
+```
+
+#fnlwgt
+```{r}
+boxplot(cist_dataset$fnlwgt, main="Boxplot za fnlwgt", ylab="Values", horizontal=TRUE)
+cist_dataset %>% mutate(z_score = scale(fnlwgt)) %>% filter(abs(z_score) > 3.5)
+#203 reda sa apsolutnim z_score-om vecim od 3.5 
+no_outlier_dataset = no_outlier_dataset %>% mutate(z_score = scale(fnlwgt)) %>% filter(abs(z_score) <= 3.5) %>% select(-z_score)
+
+qqnorm(cist_dataset$fnlwgt)
+qqline(cist_dataset$fnlwgt, col="red")
+
+hist(cist_dataset$fnlwgt, probability=TRUE, main="Histogram with Density", xlab="Values")
+lines(density(cist_dataset$fnlwgt), col="blue")
+
+#podaci su dugog repa
+```
+
+#education.num
+```{r}
+boxplot(cist_dataset$education.num, main="Boxplot za education.num", ylab="Values", horizontal=TRUE)
+cist_dataset %>% mutate(z_score = scale(education.num)) %>% filter(abs(z_score) > 3.5)
+#51 reda sa apsolutnim z_score-om vecim od 3.5 tj svi koji imaju vrednost 1
+no_outlier_dataset = no_outlier_dataset %>% mutate(z_score = scale(education.num)) %>% filter(abs(z_score) <= 3.5) %>% select(-z_score)
+
+qqnorm(cist_dataset$education.num)
+qqline(cist_dataset$education.num, col="red")
+
+hist(cist_dataset$education.num, probability=TRUE, main="Histogram with Density", xlab="Values")
+lines(density(cist_dataset$education.num), col="blue")
+
+```
+
+#capital.gain
+```{r}
+boxplot(cist_dataset$capital.gain, main="Boxplot za capital.gain", ylab="Values", horizontal=TRUE)
+cist_dataset %>% mutate(z_score = scale(capital.gain)) %>% filter(abs(z_score) > 3.5)
+#200 redova sa apsolutnim z_score-om vecim od 3.5 
+no_outlier_dataset = no_outlier_dataset %>% mutate(z_score = scale(capital.gain)) %>% filter(abs(z_score) <= 3.5) %>% select(-z_score)
+
+qqnorm(cist_dataset$capital.gain)
+qqline(cist_dataset$capital.gain, col="red")
+
+hist(cist_dataset$capital.gain, probability=TRUE, main="Histogram with Density", xlab="Values")
+lines(density(cist_dataset$capital.gain), col="blue")
+```
+
+#capital.loss
+```{r}
+boxplot(cist_dataset$capital.loss, main="Boxplot za capital.loss", ylab="Values", horizontal=TRUE)
+cist_dataset %>% mutate(z_score = scale(capital.loss)) %>% filter(abs(z_score) > 3.5)
+#1383 redova sa apsolutnim z_score-om vecim od 3.5
+no_outlier_dataset = no_outlier_dataset %>% mutate(z_score = scale(capital.loss)) %>% filter(abs(z_score) <= 3.5) %>% select(-z_score)
+
+qqnorm(cist_dataset$capital.loss)
+qqline(cist_dataset$capital.loss, col="red")
+
+hist(cist_dataset$capital.loss, probability=TRUE, main="Histogram with Density", xlab="Values")
+lines(density(cist_dataset$capital.loss), col="blue")
+```
+
+#hours.per.week
+```{r}
+boxplot(cist_dataset$hours.per.week, main="Boxplot za hours.per.week", ylab="Values", horizontal=TRUE)
+cist_dataset %>% mutate(z_score = scale(hours.per.week)) %>% filter(abs(z_score) > 3.5)
+#204 reda sa apsolutnim z_score-om vecim od 3.5 uglavnom svi koji imaju preko 84 sata rada
+no_outlier_dataset = no_outlier_dataset %>% mutate(z_score = scale(hours.per.week)) %>% filter(abs(z_score) <= 3.5) %>% select(-z_score)
+
+qqnorm(cist_dataset$hours.per.week)
+qqline(cist_dataset$hours.per.week, col="red")
+
+hist(cist_dataset$hours.per.week, probability=TRUE, main="Histogram with Density", xlab="Values")
+lines(density(cist_dataset$hours.per.week), col="blue")
+
+```
+
+#workclass, education, marital.status, sex, occupation, race, relationship, native.country
+```{r}
+#Outlieri su uglavnom povezani sa numerckim podacima i oznacavaju neobicno visoke ili niske vrednosti pa ih necemo primenjivati na kategorijske kolone.
+```
+
+#ANALIZA
+# U nastavku cemo prikazati vrednost income-a u odnosu na parametare koji opisuju jednog pojedinca.
+# income - da li pojedinac zaradjuje 0(<=50k) ili 1(>50k)
+
+#AGE
+```{r}
+cist_dataset %>% 
+  ggplot() +  aes(x = age) +  geom_bar() +  geom_vline(xintercept = c(27, 60), col = "red", linetype = "dashed") +
+    facet_grid(income ~ ., scales = "free_y")
+```
+Sa grafika vidimo da >50k imaju u najvecem broju pojedinci izmedju 27 i 60 godina
+Dok za <=50k pravilo je da linearno opada broj ljudi sa povecanjem godina pocevsi od 30
+
+```{r}
+ggplot(data=cist_dataset,mapping = aes(x=age, fill=income )) +  
+geom_bar() +  
+labs(title = "Distribucija income-a po godinama pojedinca") + 
+theme(plot.title = element_text(hjust = 0.5)) 
+```
+```{r}
+ggplot(data=cist_dataset, aes(x=AgeGroup,fill=income)) +  
+geom_bar(position='dodge') + 
+labs(title = "Distribucija income-a po starosnim grupama") + 
+theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+#WORKCLASS
+```{r}
+
+gg_workclass = ggplot(cist_dataset, aes(x = workclass, fill = factor(income))) + 
+  geom_bar(position = "dodge") + 
+  xlab("Workclass") + 
+  ylab("Count") +
+  scale_fill_discrete(name = "Yearly income over 50k", labels = c("No", "Yes")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+gg_workclass
+
+```
+
+#education
+```{r}
+gg_education = ggplot(cist_dataset, aes(x = education, fill = factor(income))) + 
+  geom_bar() + 
+  xlab("Education") + 
+  ylab("Count") +
+  scale_fill_discrete(name = "Yearly income over 50k", labels = c("No", "Yes")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+gg_education
+```
+```{r}
+education.income = xtabs(~ education + income, data = cist_dataset)
+education.income
+```
+
+```{r}
+education.income.prop = prop.table(education.income, margin = 1)
+education.income.prop
+```
+
+
+#education.num
+```{r}
+cist_dataset %>% 
+  ggplot() +  aes(x = education.num) +  geom_bar() +  geom_vline(xintercept = c(8.5), col = "red", linetype = "dashed") +
+    facet_grid(income ~ ., scales = "free_y")
+```
+#Najvece grupe za edukaciju koje zaradjuju preko 50k procentualno su Doctorate(74%), Prof-school(73%) and Masters(56%), praceni sa Bachelors(41%).
+#Sve ispod HS-grad jedva da ima neke brojke sa takvim pojedincima uglavnom od 3-7%
+
+#marital.status
+```{r}
+gg_marital.status = ggplot(cist_dataset, aes(x = marital.status, fill = factor(income))) + 
+  geom_bar(position = "dodge") + 
+  xlab("Marital status") + 
+  ylab("Count") +
+  scale_fill_discrete(name = "Yearly income over 50k", labels = c("No", "Yes")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+gg_marital.status
+```
+```{r}
+MarriedPercent = cist_dataset %>% group_by(marital.status,income) %>% summarise(n = n()) %>% mutate(percent = round(prop.table(n),2)) %>% arrange(percent) %>% mutate(p = scales::percent(percent))
+
+ggplot(MarriedPercent, aes(x = marital.status, y = percent, fill = income)) +
+  geom_col() +labs(title="Procentualna raspodela bracnog statusa") +
+  geom_text(aes(label = p), position = position_stack(vjust = 0.5)) +
+  scale_fill_brewer(palette = "Pastel1") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+#occupation
+```{r}
+gg_occupation = ggplot(cist_dataset, aes(x = occupation, fill = factor(income))) + 
+  geom_bar(position = "dodge") + 
+  xlab("Occupation") + 
+  ylab("Count") +
+  scale_fill_discrete(name = "Yearly income over 50k", labels = c("No", "Yes")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+gg_occupation
+```
+
+#relationship
+```{r}
+gg_relationship = ggplot(cist_dataset, aes(x = relationship, fill = factor(income))) + 
+  geom_bar(position = "dodge") + 
+  xlab("Relationship") + 
+  ylab("Count") +
+  scale_fill_discrete(name = "Yearly income over 50k", labels = c("No", "Yes")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+gg_relationship
+```
+```{r}
+RelationshipPercent2 = cist_dataset %>% group_by(relationship,income) %>% summarise(n = n()) %>% mutate(percent = round(prop.table(n),2)) %>% arrange(percent) %>% mutate(p = scales::percent(percent))
+
+ggplot(RelationshipPercent2, aes(x = relationship, y = percent, fill = income)) +
+  geom_col() + labs(title="Procentualna raspodela veze") +
+  geom_text(aes(label = p), position = position_stack(vjust = 0.5)) +
+  scale_fill_brewer(palette = "Pastel1") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+#race
+```{r}
+gg_race = ggplot(cist_dataset, aes(x = race, fill = factor(income))) + 
+  geom_bar(position = "dodge") + 
+  xlab("Race") + 
+  ylab("Count") +
+  scale_fill_discrete(name = "Yearly income over 50k", labels = c("No", "Yes")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+gg_race
+```
+```{r}
+RacePercent1 = cist_dataset %>% group_by(race,income) %>% summarise(n = n()) %>% mutate(percent = round(prop.table(n),2)) %>% arrange(percent) %>% mutate(p = scales::percent(percent))
+
+ggplot(RacePercent1, aes(x = race, y = percent, fill = income)) +
+  geom_col() +labs(title="Procentualna raspodela rase") +
+  geom_text(aes(label = p), position = position_stack(vjust = 0.5)) +
+  scale_fill_brewer(palette = "Pastel1") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+```{r}
+race.income = xtabs(~ race + income, data = cist_dataset)
+race.income
+```
+
+```{r}
+race.income.prop = prop.table(race.income, margin = 1)
+race.income.prop
+```
+
+
+
+#SEX
+```{r}
+gg_sex <- ggplot(cist_dataset, aes(x = factor(sex), fill = income)) +
+ geom_bar(position = "dodge") +
+ ylab("Income") +
+ xlab("Sex") 
+gg_sex
+```
+
+# Zakljucujemo da su za >50k uglavnom zastupljeni muskarci 
+# dok za <=50k su u vecoj meri muskarci ali ne toliko ubedljivo
+```{r}
+sex.income = xtabs(~ sex + income, data = cist_dataset)
+sex.income
+```
+
+```{r}
+sex.income.prop = prop.table(sex.income, margin = 1)
+sex.income.prop
+
+```
+```{r}
+SexPercent1 = cist_dataset %>% group_by(sex,income) %>% summarise(n = n()) %>% mutate(percent = round(prop.table(n),2)) %>% arrange(percent) %>% mutate(p = scales::percent(percent))
+
+ggplot(SexPercent1, aes(x = sex, y = percent, fill = income)) +
+  geom_col() +labs(title="Procentualna raspodela po polu") +
+  geom_text(aes(label = p), position = position_stack(vjust = 0.5)) +
+  scale_fill_brewer(palette = "Pastel1") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+#Sa ovim potvrdjujemo zakljucke sa grafika
+
+#capital.gain
+```{r}
+gg_capital.gain = ggplot(cist_dataset, aes(x = capital.gain, fill=income )) + 
+  geom_histogram(binwidth=3000) 
+
+gg_capital.gain
+```
+
+#capital.loss
+```{r}
+gg_capital.loss = ggplot(cist_dataset, aes(x = capital.loss, fill=income)) + 
+  geom_histogram(binwidth=500) 
+
+gg_capital.loss
+```
+
+#hours.per.week
+```{r}
+ggplot(data=cist_dataset,mapping = aes(x=hours.per.week, fill=income )) +  
+geom_bar() +  
+labs(title = "Distribucija income-a po nedeljnim satima rada") + 
+theme(plot.title = element_text(hjust = 0.5)) 
+```
+```{r}
+cist_dataset %>% 
+  ggplot() +  aes(x = hours.per.week) +  geom_bar() +  geom_vline(xintercept = c(39, 41), col = "red", linetype = "dashed") +
+    facet_grid(income ~ ., scales = "free_x")
+```
+#Ocekivano najveca grupa ljudi je ona koja radi 40h nedeljno pa je medju njima i najvise ljudi koji zaradjuju preko 50k tako i onih koji ne zaradjuju 50k
+
+#native.country
+```{r}
+gg_native.country = ggplot(cist_dataset, aes(x = native.country, fill = factor(income))) + 
+  geom_bar() + 
+  xlab("native.country") + 
+  ylab("Count") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+gg_native.country
+```
+#ANALIZA IZMEDJU VISE FEATURE-a
+
+#age ~ sex
+```{r}
+gg_age_sex = ggplot(cist_dataset, aes(x = age, fill = factor(sex))) + 
+  geom_bar() + 
+  xlab("age") + 
+  ylab("Count") 
+
+gg_age_sex
+```
+
+#age~race
+```{r}
+gg_age_race = ggplot(cist_dataset, aes(x = age, fill = factor(race))) + 
+  geom_bar() + 
+  xlab("age") + 
+  ylab("Count")
+
+gg_age_race
+```
+
+#workclass ~ race
+```{r}
+ggplot(cist_dataset, aes(x = workclass, fill = factor(race))) + 
+  geom_bar() +
+  facet_wrap(~ race) +
+  xlab("workclass") +
+  ylab("Count") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+#occupation ~ relationship.status
+```{r}
+ ggplot(cist_dataset, aes(x = occupation, fill = factor(relationship))) + 
+  geom_bar() +
+  facet_wrap(~ relationship) +
+  xlab("occupation") +
+  ylab("Count") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+#occupation ~ education
+```{r} 
+heatmap_data = cist_dataset %>%
+  count(occupation, education) %>%
+  na.omit() 
+
+ ggplot(heatmap_data, aes(x = education, y = occupation, fill = n)) + 
+  geom_tile() +
+  scale_fill_gradient(low = "beige", high = "red") +  # Adjust colors as needed
+  xlab("education") +
+  ylab("Occupation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+#hours per week ~ sex
+```{r}
+
+ggplot(cist_dataset, aes(x = hours.per.week, fill = factor(sex))) + 
+  geom_bar() + 
+  xlab("hours.per.week") + 
+  ylab("Count") 
+```
+
+#occupation ~ sex
+```{r}
+ggplot(cist_dataset, aes(x = occupation, fill = factor(sex))) + 
+  geom_bar() + 
+  xlab("occupation") + 
+  ylab("Count") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+#education ~ sex
+```{r}
+ggplot(cist_dataset, aes(x = education, fill = factor(sex))) + 
+  geom_bar() + 
+  xlab("education") + 
+  ylab("Count") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+
+#workclass ~ sex
+```{r}
+ggplot(cist_dataset, aes(x = workclass, fill = factor(sex))) + 
+  geom_bar() + 
+  xlab("workclass") + 
+  ylab("Count") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+#SELEKCIJA - FEATURE SELECTION
+```{r}
+#numericki
+cist_dataset = cist_dataset %>% select(-AgeGroup)
+cist_dataset$income_encoded = ifelse(cist_dataset$income == "<=50K", 0, 1)
+
+numeric_columns = cist_dataset %>% select(where(is.numeric))
+
+cor(numeric_columns)
+
+#pairs(numeric_columns) #grafici rasejanja za svaki moguci par varijabli
+```
+Pošto nam je prediktovana kolona binarna tj <=50k(0) ili >50k(1) linearna regresija nije najbolja opcija.
+
+Korišćenjem logističkog regresionog modela trebalo bi da dobijemo bolje rezultate predikcije s obzirom da prediktujemo binarnu vrednost.
+
+Age - Ima slabu korelaciju sa kolonom income_encoded koja iznosi 0.234.
+
+Fnlwgt - Maltene da i nema korelaciju tako da je verovatno nećemo uzimati u obzir za predikciju. Korelacija iznosi svega -0.009.
+
+Education_num - Pozitivna korelacija od 0.335, ukazuje nam na to da što je veći education.num to će i income_encoded potencijalno biti veći.
+
+Capital.gain - Korelacija koja iznosi 0.223.
+
+Capital.loss - Slaba korelacija koja iznosi svega 0.150 što sugeriše na to da postoji minimalna povezanost rasta capital.loss-a i 
+income-encoded.
+
+Hours.per.week - Ova varijabla ima korelaciju od svega 0.229 i pokazuje nam malu verovatnoću da rast radnih sati nedeljno utiče pozitivno i na rast income-a.
+
+
+#kategorijske
+```{r}
+#prvo moramo da pretvorimo sve character kolone u factor vrednosti
+cist_dataset = cist_dataset %>% mutate_if(is.character, as.factor)
+
+cramers_v = function(var1, var2) 
+{
+  tbl = table(var1, var2)
+  #Racunamo Cramerov V
+  chisq = chisq.test(tbl)
+  v = sqrt(chisq$statistic / (sum(tbl) * (min(dim(tbl)) - 1)))
+  return(v)
+}
+
+#da izdvojimo sve kategorijske promenljive
+categorical_columns = sapply(cist_dataset, is.factor)
+categorical_data = cist_dataset[, categorical_columns]
+
+# Pravimo matricu kako bi sacuvali podatke
+num_vars = ncol(categorical_data)
+cramers_v_matrix = matrix(NA, nrow=num_vars, ncol=num_vars, 
+                            dimnames=list(colnames(categorical_data), colnames(categorical_data)))
+
+# Racunamo Cramerov V za svaki par varijabla
+for (i in 1:num_vars) 
+{
+  for (j in i:num_vars) 
+  {  
+    if (i != j) 
+    {
+      v = cramers_v(categorical_data[[i]], categorical_data[[j]])
+      cramers_v_matrix[i, j] = v
+      cramers_v_matrix[j, i] = v  
+    }
+  }
+}
+
+print(cramers_v_matrix)
+
+cramers_v_df = as.data.frame(cramers_v_matrix)
+print(cramers_v_df)
+
+```
+Workclass - Korelacija iznosi 0.168
+
+Education - Korelacija od 0.369 označava da je ovo osrednja korelacija između dve kolone što nam možda može značiti u nastavku.
+
+Marital.status - Druga najveća korelacija od 0.447 to ovu kolonu čini dobrom za predikciju.
+
+Occupation - Korelacija od 0.333 označava da je ovo osrednja korelacija između dve kolone sto nam može značiti u nastavku.
+
+Relationship - Najveća korelacija od čak 0.454 to ovu kolonu čini najpodobnijom za dalju predikciju.
+
+Race - Korelacija iznosi 0.101 to je previše malo da bi nam značila za predikciju income-a.
+
+Sex - Korelacija iznosi 0.216.
+
+Native.country - Korelacija je 0.099 to je previše malo da bi nam značila za predikciju income-a.
+
+#MODELI MASINSKOG UCENJA
+```{r}
+#Podelicemo ceo skup na test i train skupove u odnosu 80/20 gde cemo 80% koristiti za treniranje, ostalih 20% cemo koristiti za testiranje.
+
+cist_dataset = cist_dataset %>% select(-income)
+#Izbrisacemo kolonu income, ostavicemo enkodiranu kolonu gde ce "<=50k" biti predstavljeno sa 0 dok ce ">50k" biti predstavljeni brojem 1
+
+set.seed(123)
+
+#stratifikacija na osnovu kolone native.country jer tu imamo najvise nivoa za faktore.
+train_index = createDataPartition(cist_dataset$native.country, p = 0.80, list = FALSE)
+
+train = cist_dataset[train_index,]
+test = cist_dataset[-train_index,]
+
+```
+
+```{r}
+train = train[train$native.country != 'Holand-Netherlands', ] #brisemo red sa vrednoscu Holand-Netherlands jer postoji samo jedna vrednost i to u testnom skupu dok u train skupu ne postoji a zbog razlicitih levela za svaku kolonu to nam pravi problem.
+```
+
+
+```{r}
+library(ROCR)
+library(pROC)
+```
+
+
+#raspodela income-a za train skup podataka
+```{r}
+gg_train = ggplot(train, aes(x=income_encoded)) +
+  geom_bar() +
+  labs(title="Raspodela income-a za training set podataka.",
+       x="income",
+       y="Broj")
+
+print(gg_train)
+```
+
+#raspodela income-a za test skup podataka
+```{r}
+gg_train = ggplot(test, aes(x=income_encoded)) +
+  geom_bar() +
+  labs(title="Raspodela income-a za testing set podataka.",
+       x="income",
+       y="Broj")
+
+print(gg_train)
+```
+
+#prop.table
+```{r}
+prop.table(table(train$income_encoded))
+```
+Dobili smo da otprilike 76% zaradjuje manje od 50k dok oko 24% zaradjuje vise. Iz toga znamo da nisu izbalansirani podaci.
+
+#RESAMPLING
+```{r}
+library(ROSE)
+library(rpart)
+#Random Over-Sampling Examples sluzi za generisanje sintetickih balansiranih skupova podataka iz nasih podataka
+
+proba = rpart(income_encoded ~ ., data = train)
+
+proba_prediction = predict(proba, newdata = test)
+
+accuracy.meas(test$income_encoded,proba_prediction[])
+
+```
+Prag za vrednosti je 0.5 (Treshold) 
+Precision nam je 0.777 što znači da su oko 77.7% pozitivnih predikcija našeg modela tačne. Pošto je vrednost između 60 i 80% ovo je ok vrednost.
+Recall nam je 0.514 što znači da je oko 51% pozitivnih i manje više isto toliko negativnih instanci. Pošto je vrednost manja od 60% ovo se uzima kao loša vredost.
+F score = 0.309 sto je relativno nisko pošto je manja od 0.5.
+
+
+#ROC kriva
+```{r}
+roc.curve(test$income_encoded, proba_prediction[], plotit = F)
+```
+AUC vrednost od 0.860 oznacava da nas model nije los ali je svakako potrebno da se prvo izbalansira.
+
+#
+```{r}
+xtabs(~income_encoded, data = train)
+```
+
+#Oversampling
+```{r}
+set.seed(123)
+data_oversampling = ovun.sample(income_encoded ~ ., data = train, method = "over",N = 39580)$data
+
+table(data_oversampling$income_encoded)
+
+```
+
+#Undersampling
+```{r}
+set.seed(123)
+data_undersampling = ovun.sample(income_encoded ~ ., data = train, method  = "under", N = 12552, seed = 1)$data
+
+table(data_undersampling$income_encoded)
+```
+
+Podaci su sad balansirani. Ostaje nam da iskombinujemo ove dve vrednosti.
+
+#
+```{r}
+dim(train)
+
+```
+
+#over + under sampling
+```{r}
+set.seed(123)
+data_both = ovun.sample(income_encoded ~ ., data = train, method
+= "both", p=0.5, N=26066, seed = 1)$data
+
+table(data_both$income_encoded)
+
+```
+
+#data.rose
+```{r}
+data_rose = ROSE(income_encoded ~ ., data = train, seed = 1)$data
+
+table(data_rose$income_encoded)
+```
+
+```{r}
+install.packages("rpart")
+install.packages("ROCR")
+install.packages("pROC")
+```
+
+```{r}
+library(rpart)
+library(pROC)
+library(ROCR)
+library(ROSE)
+```
+ 
+
+#provera
+```{r}
+
+tree.rose = rpart(income_encoded ~ ., data = data_rose)
+tree.over = rpart(income_encoded ~ ., data = data_oversampling)
+tree.under = rpart(income_encoded ~ ., data = data_undersampling)
+tree.both = rpart(income_encoded ~ ., data = data_both)
+
+predict_rose = predict(tree.rose, newdata = test)
+predict_over = predict(tree.over, newdata = test)
+predict_under = predict(tree.under, newdata = test)
+predict_both = predict(tree.both, newdata = test)
+
+roc_rose = roc(test$income_encoded, predict_rose)
+roc_over = roc(test$income_encoded, predict_over)
+roc_under = roc(test$income_encoded, predict_under)
+roc_both = roc(test$income_encoded, predict_both)
+
+
+plot(roc_rose, col = "blue", main = "ROC Curve Comparison")
+lines(roc_over, col = "red")
+lines(roc_under, col = "green")
+lines(roc_both, col = "purple")
+legend("bottomright", legend = c("ROSE", "Oversampling", "Undersampling", "
+Both"),
+ col = c("blue", "red", "green", "purple"), lty = 1)
+
+```
+
+Ne vidimo Oversampling liniju zato sto je skoro ista kao i Both linija.
+
+#
+```{r}
+print(roc_rose)
+print(roc_over)
+print(roc_under)
+print(roc_both)
+```
+rose (AUC): 0.7968
+Oversampling (AUC): 0.8738
+Undersampling (AUC): 0.8597
+Both (AUC): 0.8726
+
+Najbolji rezultat dobijamo oversampling metodom.
+
+```{r}
+
+X_train = train[, -ncol(train)]
+Y_train = train[, ncol(train)]
+
+data_oversampled = ROSE(income_encoded ~ ., data = train, seed = 1)$data
+
+X_oversampled = data_oversampled[, -ncol(data_oversampled)]
+Y_oversampled = data_oversampled[, ncol(data_oversampled)]
+
+```
+
+#F-Regression 
+
+```{r}
+X_train = X_oversampled
+Y_train = Y_oversampled
+
+fr_model = lm(Y_train ~ ., data = X_train)
+
+f_regression = summary(fr_model)$fstatistic
+
+p_values = pf(f_regression[1], f_regression[2], f_regression[3], lower.tail = FALSE)
+
+significant_features = names(cist_dataset)[p_values < 0.05]
+significant_features
+
+```
+#Iz ovoga zakljucujemo da sve kolone mozemo uzeti u obzir
+
+#LOGISTICKA REGRESIJA
+
+#Logistička regresija se koristi za modelovanje verovatnoće da se dogodi određeni događaj koji ima binarni izlaz (kod nas income_encoded ima izlaz 0 ili 1). 
+#Binomijalna raspodela se koristi za modeliranje slučajeva gde se događaji mogu podeliti u dve kategorije (uspeh i neuspeh)
+
+```{r}
+library(car)
+
+model3 = glm(formula = Y_train ~ ., data.frame(X_train, Y_train), family = "binomial")
+
+summary(model3)
+
+Anova(model3, type = "III")
+
+```
+
+#Model koji uključuje sve kolone  ima AIC vrednost 21144. Za kolonu education.num smo dobili da je p-vrednost veća od 0.05 pa ćemo nju izbaciti za model2 I probaćemo bez kolona age I fnlwgt.
+
+```{r}
+model2 = glm (Y_train ~ workclass +  education + marital.status + occupation + relationship + sex + race + capital.gain + capital.loss + hours.per.week + native.country, data.frame(X_train, Y_train), family = "binomial")
+
+summary(model2)
+
+Anova(model2, type = "III")
+```
+
+#Pošto AIC vrednost treba da bude što manja bolji nam je model3 jer je ovde AIC vrednost 21418 pa ćemo da ostanemo na njemu.
+
+```{r }
+prediction_model3 = predict(model3, test, type="response")
+
+roc_curve = roc(test$income_encoded, prediction_model3)
+plot(roc_curve)
+auc(roc_curve)
+
+
+```
+AUC iznosi 0.8973, sve preko 0.9 je veoma dobro tako da smo tu
+
+```{r}
+#Sa grafika se vidi da je negde oko 0.5 optimal treshold ali provericemo to
+
+optimal_treshold = coords(roc_curve, "best", best.method="youden")$threshold
+
+# Print the optimal threshold
+print(optimal_treshold)
+```
+
+```{r}
+library(caret)
+```
+
+```{r}
+conf_matrix_model3 = confusionMatrix(table(ifelse(prediction_model3 > 0.6, 1, 0), test$income_encoded))
+conf_matrix_model3
+```
+
+
+#ACCURACY
+```{r}
+accuracy = conf_matrix_model3$overall["Accuracy"]
+print(accuracy)
+#kada je optimal_treshold(0.5) accuracy je 0.80
+#kada stavimo 0.6 accuracy je 0.83
+#kada stavimo 0.7 accuracy je 0.84
+#kada stavimo 0.8 accuracy je 0.83
+```
+#PRECISION
+```{r}
+precision = conf_matrix_model3$byClass["Pos Pred Value"]
+print(precision)
+#kada je optimal_treshold(0.5) precision je 0.94
+#kada stavimo 0.6 precision je 0.92
+#kada stavimo 0.7 precision je 0.88
+#kada stavimo 0.8 precision je 0.85
+```
+
+#RECALL
+```{r}
+print(paste(round(conf_matrix_model3$byClass["Sensitivity"], 2)))
+#kada je optimal_treshold(0.5) recall je 0.79
+#kada stavimo 0.6 recall je 0.85
+#kada stavimo 0.7 recall je 0.9
+#kada stavimo 0.8 recall je 0.94
+```
+
+#F1-SCORE
+```{r}
+print(paste("F1-Score:", round(conf_matrix_model3$byClass["F1"], 2)))
+#kada je optimal_treshold(0.5) f1-score je 0.86
+#kada stavimo 0.6 f1-score je 0.88
+#kada stavimo 0.7 f1-score je 0.89
+#kada stavimo 0.7 f1-score je 0.9
+```
+
+
+```{r}
+#occupation education relationship marital.status 
+model4 = glm (Y_train ~  education + marital.status + occupation + relationship, data.frame(X_train, Y_train), family = "binomial")
+
+summary(model4)
+#Probali smo da napravimo model i samo sa najboljim feature-ima iz feature selection-a ali nismo dobili bolje rezultate
+
+```
+
+
+```{r}
+library(pROC)
+library(ROSE)
+library(caret)
+library(dplyr)
+```
+
+#MODEL OD PODATAKA BEZ OUTLIERA
+```{r}
+
+no_outlier_dataset$income_encoded = ifelse(no_outlier_dataset$income == "<=50K", 0, 1)
+no_outlier_dataset = no_outlier_dataset %>% select(-income)
+no_outlier_dataset = no_outlier_dataset %>% select(-AgeGroup)
+
+set.seed(123)
+
+#stratifikacija na osnovu kolone native.country jer tu imamo najvise nivoa za faktore.
+train_index2 = createDataPartition(no_outlier_dataset$native.country, p = 0.80, list = FALSE)
+
+train2 = no_outlier_dataset[train_index2,]
+test2 = no_outlier_dataset[-train_index2,]
+
+xtabs(~income_encoded, data = train2)
+
+data_oversampling2 = ovun.sample(income_encoded ~ ., data = train2, method = "over",N = 38054)$data
+
+table(data_oversampling2$income_encoded)
+
+train2 = train2 %>% mutate(across(where(is.character), as.factor))
+
+data_rose2 = ROSE(income_encoded ~ ., data = train2, seed = 1)$data
+
+table(data_rose2$income_encoded)
+
+X_train2 = train2[, -ncol(train2)]
+Y_train2 = train2[, ncol(train2)]
+
+data_oversampled2 = ROSE(income_encoded ~ ., data = train2, seed = 1)$data
+
+X_oversampled2 = data_oversampled2[, -ncol(data_oversampled2)]
+Y_oversampled2 = data_oversampled2[, ncol(data_oversampled2)]
+
+X_train2 = X_oversampled2
+Y_train2 = Y_oversampled2
+
+model32 = glm(formula = Y_train2 ~ ., data.frame(X_train2, Y_train2), family = "binomial")
+
+summary(model32)
+Anova(model32, type = "III")
+#AIC VREDNOST 19383 < 21144 tako da je bolje
+```
+
+```{r}
+library(ROCR)
+library(pROC)
+library(caret)
+```
+
+
+```{r}
+
+prediction_model32 = predict(model32, test2, type="response") # na testnom skupu
+
+train_predictions32 = predict(model32, train2, type="response") # na train skupu
+
+
+roc_curve2 = roc(test2$income_encoded, prediction_model32)
+plot(roc_curve2)
+auc(roc_curve2)
+
+#AUC 0.8982 > 0.8967 tako da je bolji
+
+optimal_treshold2 = coords(roc_curve2, "best", best.method="youden")$threshold
+
+print(optimal_treshold2) # = 0.46
+
+conf_matrix_model32 = confusionMatrix(table(ifelse(prediction_model32 > 0.7, 1, 0), test2$income_encoded))
+conf_matrix_model32
+
+predicted_factors = factor(ifelse(train_predictions32 > 0.7, 1, 0), levels = c(0, 1))
+actual_factors = factor(train2$income_encoded, levels = c(0, 1))
+train_accuracy = confusionMatrix(predicted_factors, actual_factors)
+
+```
+#PROVERA DA LI JE MODEL OVERFITOVAN
+```{r}
+#NAD TESTNIM SKUPOM PODATAKA
+print(conf_matrix_model32$overall["Accuracy"])
+print(conf_matrix_model32$byClass["Pos Pred Value"])
+print(conf_matrix_model32$byClass["Sensitivity"])
+print(conf_matrix_model32$byClass["F1"])
+
+print("-----------")
+
+#NAD TRAINING SKUPOM PODATAKA
+print(train_accuracy$overall["Accuracy"])
+print(train_accuracy$byClass["Pos Pred Value"])
+print(train_accuracy$byClass["Sensitivity"])
+print(train_accuracy$byClass["F1"])
+
+```
+#Nismo uocili znacajan overfitting ni underfitting posto su slicne vrednosti kako za accuracy tako i za ostale PPV(pozitivne prediktovane vrednosti).
+#Generalno je model dobar i nisu drasticne razlike u tacnosti kada se koristi testni skup iako ga model do sada nije video.
+#Logisticka regresija je generalno manje sklona overfittingu zbog svoje jednostavnosti.
+
+
+```{r}
+print(conf_matrix_model32$overall["Accuracy"])
+#kad je optimal_treshold = 0.78
+#kad je treshold 0.6 = 0.83
+#kad je treshold 0.7 = 0.845
+
+print(conf_matrix_model32$byClass["Pos Pred Value"])
+#kad je optimal_treshold = 0.95
+#kad je treshold 0.6 = 0.93
+#kad je treshold 0.7 = 0.9
+
+print(paste(round(conf_matrix_model32$byClass["Sensitivity"], 2)))
+#kad je optimal_treshold = 0.75
+#kad je treshold 0.6 = 0.84
+#kad je treshold 0.7 = 0.9
+
+print(paste(round(conf_matrix_model32$byClass["F1"], 2)))
+#kad je optimal_treshold =0.84
+#kad je treshold 0.6 = 0.88
+#kad je treshold 0.7 = 0.9
+
+```
+
+#Decision tree
+
+```{r}
+
+modelDT2 = rpart (Y_train ~ ., data.frame(X_train, Y_train), method = "class")
+
+
+prediction_modelDT2 = predict(modelDT2, test, type="prob")
+
+prediction_modelDT2 = prediction_modelDT2[, 2]
+
+roc_curvedt2 = roc(test$income_encoded, prediction_modelDT2)
+plot(roc_curvedt2)
+auc(roc_curvedt2)
+
+prediction_modelDT2 = ifelse(prediction_modelDT2 >= 0.5, 1, 0)
+table(prediction_modelDT2, test$income_encoded)
+
+```
+
+```{r}
+#Napravicemo model bez age, education.num i race
+library(rpart)
+
+modelDT = rpart (Y_train ~ workclass + fnlwgt + education +  marital.status + occupation + relationship  + sex + capital.gain + capital.loss + hours.per.week + native.country, data.frame(X_train, Y_train), method = "class")
+
+
+prediction_modelDT = predict(modelDT, test, type="prob")
+
+prediction_modelDT = prediction_modelDT[, 2]
+
+roc_curvedt = roc(test$income_encoded, prediction_modelDT)
+plot(roc_curvedt)
+auc(roc_curvedt)
+
+prediction_modelDT = ifelse(prediction_modelDT >= 0.5, 1, 0)
+table(prediction_modelDT, test$income_encoded)
+```
+#AUC je samo 0.5812
+
+```{r}
+conf_matrix_modelDT = confusionMatrix(table(prediction_modelDT, test$income_encoded))
+conf_matrix_modelDT
+```
+
+```{r}
+
+accuracydt = conf_matrix_modelDT$overall["Accuracy"]
+print(accuracydt)
+
+precisiondt = conf_matrix_modelDT$byClass["Pos Pred Value"]
+print(precisiondt)
+
+print(paste(round(conf_matrix_modelDT$byClass["Sensitivity"], 2)))
+
+print(paste("F1-Score:", round(conf_matrix_modelDT1$byClass["F1"], 2)))
+
+```
+
+Poređenjem ova 2 modela, dobili smo da nema nikakve razlike između njih iako smo menjali broj feature-a, AUC vrednost je 0.5812.
+
+#RANDOM FOREST
+```{r}
+library(randomForest)
+#ModelRF ukljucuje sve feature
+
+Y_train = factor(Y_train)
+modelRF = randomForest(Y_train ~ ., data = data.frame(X_train, Y_train), ntree = 100)
+
+varImpPlot(modelRF)
+
+```
+
+```{r}
+prediction_modelRF1 = predict(modelRF, newdata = test)
+
+conf_matrix_modelRF1 = confusionMatrix(table(prediction_modelRF1, test$income_encoded))
+conf_matrix_modelRF1
+
+```
+
+
+```{r}
+#Accuracy
+accuracyRF = conf_matrix_modelRF1$overall["Accuracy"]
+print(accuracyRF)
+
+#Precision
+precisionRF = conf_matrix_modelRF1$byClass["Pos Pred Value"]
+print(precisionRF)
+
+#Recall
+print(paste(round(conf_matrix_modelRF1$byClass["Sensitivity"], 2)))
+
+#F1-score
+print(paste(round(conf_matrix_modelRF1$byClass["F1"], 2)))
+
+
+```
+
+
+```{r}
+#U modelRF2 koristimo sve osim age koji je osrednje bitan
+
+modelRF2 = randomForest(Y_train ~ workclass + fnlwgt + education + education.num + marital.status + occupation + relationship + race + sex + capital.gain + capital.loss + hours.per.week + native.country, data = data.frame(X_train, Y_train), ntree = 100)
+
+varImpPlot(modelRF2)
+
+prediction_modelRF2 = predict(modelRF2, newdata = test)
+
+conf_matrix_modelRF2 = confusionMatrix(table(prediction_modelRF2, test$income_encoded))
+conf_matrix_modelRF2
+
+```
+
+
+```{r}
+
+#Accuracy
+accuracyRF2 = conf_matrix_modelRF2$overall["Accuracy"]
+print(accuracyRF)
+
+#Precision
+precisionRF2 = conf_matrix_modelRF2$byClass["Pos Pred Value"]
+print(precisionRF)
+
+#Recall
+print(paste(round(conf_matrix_modelRF2$byClass["Sensitivity"], 2)))
+
+#F1-score
+print(paste(round(conf_matrix_modelRF2$byClass["F1"], 2)))
+```
+#Dobijamo iste vrednosti nezavisno od broja feature-a, isprobali smo I modele bez drugih feature-a ali su rezultati slični pa ih nismo ostavljali.
+
+```{r}
+#Nivo znacajnosti na osnovu random forest algoritma
+feature_weight = data.frame( Feature = row.names(importance(modelRF)), MeanDecreaseGini = importance(modelRF))
+
+gg_feature_weight = ggplot(feature_weight, aes(x = reorder(Feature, MeanDecreaseGini), y = MeanDecreaseGini)) +
+geom_bar(stat = "identity", fill = "green") +
+theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+labs(title = "Nivo značajnosti prediktora", x = "Prediktor", y = "Nivo značajnosti")
+
+gg_feature_weight
+
+```
+#Ubedljivo najveci znacaj ima kolona capital.gain, zatim posle nje relationship, marital.status. capital.loss itd. 
+#Čak I izbacivanje najbitnije kolone nije imalo toliki uticaj na celokupni model.
+
+
+#conf_matrix_model3 se dobija iz prediction_model3 a on se dobija iz model3(logisticka regresija sa svim feature-ima)
+conf_matrix_model3 kada bi za treshold stavili 0.5(sto smo dobili kao optimalnu vrednost) dobili bi
+AUC 0.89
+Accuracy 0.800215
+Precision 0.939718 
+Recall 0.79
+F1-score 0.86
+
+conf_matrix_model3 kada bi za treshold stavili 0.6 dobili bi
+AUC 0.89
+Accuracy 0.83
+Precision 0.92
+Recall 0.85
+F1-score 0.88
+
+kada uzmemo sve u obzir deluje da je bolje da koristimo 0.6 za treshold
+
+----------------
+#conf_matrix_modelDT se dobija iz prediction_modelDT a on se dobija iz modelDT(decision tree bez age, education.num i race)
+conf_matrix_modelDT 
+
+AUC 0.58
+Accuracy 0.7736486 
+Precision 0.7887678
+Recall 0.96
+F1-score 0.86
+
+----------------
+
+#conf_matrix_modelRF1 se dobija iz prediction_modelRF1 a on se dobija iz modelRF1(random forest sa svim feature-ima)
+conf_matrix_modelRF1
+
+Accuracy 0.8045147 
+Precision 0.8108799
+Recall 0.97
+F1-score 0.88
+
+----------------
+
+#conf_matrix_model32 se dobija iz prediction_model32 a on se dobija iz model32(logisticka regresija sa svim feature-ima iz skupa podataka bez outliera)
+conf_matrix_model32 kada bi za treshold stavili 0.7 dobili bi
+
+AUC 0.9
+Accuracy 0.845
+Precision 0.9
+Recall 0.9
+F1-score 0.9
+
+
+#MOZDA JE NAJBOLJE KORISTITI conf_matrix_model32 u kojem koristimo 0.7 za treshold jer predvidjamo 0 i 1
+ima najbolji AUC - 0.9
+ima najbolji Accuracy - 0.845
+ima dobar precision - 0.9
+ima dobar recall - 0.9
+ima najbolji f1-score - 0.9
+
